@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date
@@ -201,11 +202,26 @@ class DailyQuoteCollector:
         else:
             print(f"\n并行下载（{self._workers} 线程）...")
 
+            # 最多打印前 N 个失败的完整堆栈，便于定位根因；
+            # 之后的失败仅计数，避免日志洪水（上千行堆栈会刷屏）。
+            _sample_logged = 0
+            _SAMPLE_LIMIT = 5
+
             def _worker(args: tuple[str, str]) -> tuple[str, int]:
+                nonlocal _sample_logged
                 code, start = args
                 try:
                     return self.download_and_save(code, start)
-                except Exception:
+                except Exception as exc:
+                    _sample_logged += 1
+                    if _sample_logged <= _SAMPLE_LIMIT:
+                        # 先换行跳出 \r 进度行，避免堆栈与进度混在一起
+                        sys.stdout.write("\n")
+                        print(
+                            f"[失败样本 {_sample_logged}] {code}: "
+                            f"{type(exc).__name__}: {exc}"
+                        )
+                        traceback.print_exc()
                     return code, -1
 
             with ThreadPoolExecutor(max_workers=self._workers) as executor:

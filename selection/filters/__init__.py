@@ -1,8 +1,8 @@
-"""过滤器。
+"""过滤层：基于打分 / 阈值 / 业务规则筛除股票。
 
-剔除不可交易或风险过高的标的：
-- 停牌 / ST / *ST
-- 流动性不足
-- 上市未满 N 日
-- 行业黑名单
+- :class:`~selection.filters.score_threshold.ScoreThresholdFilter`：
+  ``industry_score >= min_score`` 的简单阈值过滤。
 """
+from selection.filters.score_threshold import FilterResult, ScoreThresholdFilter
+
+__all__ = ["FilterResult", "ScoreThresholdFilter"]

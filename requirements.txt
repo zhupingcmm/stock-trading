@@ -2,6 +2,8 @@
 akshare>=1.12.0
 tushare>=1.4.0
 pymysql>=1.1.0
+# 关键催化剂采集：Qwen Max 走 DashScope 兼容模式 API
+openai>=1.0.0
 # xtquant 由 MiniQMT 自带，Windows-only，需在 QMT 环境下独立安装：
 #   pip install xtquant
 # 此处不固定版本，避免在没有 QMT 的开发机上报错
@@ -19,6 +21,7 @@ loguru>=0.7.0
 numpy>=1.24.0
 scipy>=1.11.0
 matplotlib>=3.7.0
+backtrader>=1.9.78.123
 
 # 调度
 apscheduler>=3.10.0

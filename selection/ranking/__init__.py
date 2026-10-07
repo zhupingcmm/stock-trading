@@ -1,5 +1,12 @@
-"""打分与排序。
+"""打分排序层。
 
-将多因子归一化、加权，得到可比较的综合得分，
-并按目标持仓数量产出最终排序结果。
+- :class:`~selection.ranking.industry_score.IndustryScoreRanker`：
+  按行业排名百分比换算为 1~5 分，并汇总为 ``industry_score``。
 """
+from selection.ranking.industry_score import (
+    IndustryScoreRanker,
+    IndustryScoreResult,
+    pct_to_score,
+)
+
+__all__ = ["IndustryScoreRanker", "IndustryScoreResult", "pct_to_score"]

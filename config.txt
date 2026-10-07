@@ -1,0 +1,5 @@
+国金证券QMT测试账号信息：
+测试资金账号：62258287
+测试登录密码：794907
+QMT交易测试客户端下载链接
+链接：https://download.gjzq.com.cn/temp/organ/gjzqqmt_ceshi.rar

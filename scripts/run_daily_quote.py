@@ -1,14 +1,26 @@
-"""``python -m scripts.run_daily_quote`` 命令行入口。"""
+"""``python -m scripts.run_daily_quote`` 命令行入口。
+
+支持两种调用方式：
+- ``python -m scripts.run_daily_quote``（项目根目录）
+- ``python scripts/run_daily_quote.py``（任意目录）
+"""
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-from loguru import logger
+# 让直接 ``python scripts/run_X.py`` 调用时也能 import 到项目顶层包。
+# 标准做法仍是 ``python -m scripts.run_daily_quote``，但兼容直接调用更友好。
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-from data_collection.collectors.daily_quote import DailyQuoteCollector
-from data_collection.sources.xtquant import XtQuantDataSource
-from data_collection.storage.mysql import MysqlStorage
+from loguru import logger  # noqa: E402  必须在 sys.path bootstrap 之后
+
+from data_collection.collectors.daily_quote import DailyQuoteCollector  # noqa: E402
+from data_collection.sources.xtquant import XtQuantDataSource  # noqa: E402
+from data_collection.storage.mysql import MysqlStorage  # noqa: E402
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -16,7 +28,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description="行情数据采集 (MiniQMT -> MySQL)",
     )
     parser.add_argument(
-        "--mode", choices=["test", "full"], default="test",
+        "--mode", choices=["test", "full"], default="full",
         help="test: 仅采集测试股；full: 全量板块",
     )
     parser.add_argument("--stock", default="600519.SH", help="测试模式下采集的股票代码")
