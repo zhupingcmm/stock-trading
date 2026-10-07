@@ -6,6 +6,11 @@
 
 * ``STRATEGY_META``: 字典，键包括 ``name`` / ``category`` / ``desc`` /
   ``params`` / ``logic``，用于在 CLI 汇总/报告里展示策略元信息。
+  可选扩展键：
+    - ``setup``: ``"default"``（单数据源）或 ``"multi_tf"``（多周期，
+      使用 ``setup_multi_tf_cerebro``）。默认 ``"default"``。
+    - ``requires_predictions``: bool — 是否需要预计算的 ML 预测字典，
+      若是则在 ``run_backtest`` 里跳过（需专门脚本）。
 * ``Strategy`` 类：继承 ``backtrader.Strategy`` 的策略实现。
 
 发现机制
@@ -22,7 +27,7 @@ import pkgutil
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Iterable, Type
+from typing import Any, Iterable, Type
 
 import backtrader as bt
 

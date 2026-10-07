@@ -31,6 +31,8 @@ ENV/
 data/raw/
 data/processed/
 data/cache/
+data/backtest/
+data/selection/
 *.parquet
 *.feather
 

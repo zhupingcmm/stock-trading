@@ -1,40 +1,53 @@
 """回测报告打印。
 
 * :func:`print_strategy_metrics` — 单策略指标两行块（与案例格式一致）
-* :func:`print_summary_table` — 多策略汇总表 + 极值高亮
+* :func:`print_summary_table` — 多策略汇总表 + 极值高亮（带边框）
 """
 from __future__ import annotations
 
 from typing import Iterable
 
 import pandas as pd
+from tabulate import tabulate
 
 from config.settings import BACKTEST_INITIAL_CASH
 
 
-# 汇总表列定义：(metric_key, 显示列名)
-SUMMARY_COLS = [
-    ("label", "策略"),
-    ("total_return", "总收益%"),
-    ("annual_return", "年化%"),
-    ("max_drawdown", "最大回撤%"),
-    ("sharpe_ratio", "夏普"),
-    ("calmar_ratio", "卡玛"),
-    ("win_rate", "胜率%"),
-    ("profit_loss_ratio", "盈亏比"),
-    ("profit_factor", "利润因子"),
-    ("total_trades", "交易次数"),
-    ("benchmark_return", "基准%"),
+# 汇总表列定义：(metric_key, 显示列名, fmt)
+#   fmt="pct_signed"  → "+12.34"     收益类，年化带正负号
+#   fmt="pct"         → "12.34"      回撤 / 胜率，无正负号
+#   fmt="num2"        → "1.23"       夏普 / 卡玛 / 盈亏比 / 利润因子，2 位小数
+#   fmt="int"         → "12"         交易次数，整数
+SUMMARY_COLS: list[tuple[str, str, str]] = [
+    ("label",            "策略",      "label"),
+    ("total_return",     "总收益%",   "pct_signed"),
+    ("annual_return",    "年化%",     "pct_signed"),
+    ("max_drawdown",     "最大回撤%", "pct"),
+    ("sharpe_ratio",     "夏普",      "num2"),
+    ("calmar_ratio",     "卡玛",      "num2"),
+    ("win_rate",         "胜率%",     "pct"),
+    ("profit_loss_ratio","盈亏比",    "num2"),
+    ("profit_factor",    "利润因子",  "num2"),
+    ("total_trades",     "交易次数",  "int"),
+    ("benchmark_return", "基准%",     "pct_signed"),
 ]
 
-# 控制台展示时需 ×100 的百分比键
-PCT_KEYS = {"total_return", "annual_return", "max_drawdown", "win_rate", "benchmark_return"}
 
-
-def _fmt_pct(x):
-    if x is None:
-        return "    N/A"
-    return f"{x * 100:+8.2f}"
+def _fmt_cell(value, kind: str) -> str:
+    """按列类型格式化单元格。"""
+    if value is None:
+        return "N/A"
+    if kind == "label":
+        return str(value)
+    if kind == "pct_signed":
+        return f"{value:+8.2f}"
+    if kind == "pct":
+        return f"{value:8.2f}"
+    if kind == "num2":
+        return f"{value:8.2f}"
+    if kind == "int":
+        return f"{int(value):d}"
+    return str(value)
 
 
 def print_strategy_metrics(metrics: dict, stock: str, start: str, end: str,
@@ -63,12 +76,14 @@ def print_strategy_metrics(metrics: dict, stock: str, start: str, end: str,
 
 
 def _extract_row(metrics: dict) -> dict:
+    """从 metrics dict 抽取汇总表所需的列（值已 ×100 化为百分比）。"""
     row = {}
-    for key, _ in SUMMARY_COLS:
+    for key, _, _ in SUMMARY_COLS:
         v = metrics.get(key)
         if v is None:
             row[key] = None
-        elif key in PCT_KEYS:
+        elif key in ("total_return", "annual_return", "max_drawdown",
+                     "win_rate", "benchmark_return"):
             row[key] = v * 100
         else:
             row[key] = v
@@ -82,12 +97,15 @@ def print_summary_table(rows: Iterable[dict], stock: str, start: str, end: str) 
         print("\n[汇总表] 没有可用结果。\n")
         return
 
-    df = pd.DataFrame(rows).rename(columns=dict(SUMMARY_COLS))
-    print("\n" + "=" * 100)
+    headers = [col_name for _, col_name, _ in SUMMARY_COLS]
+    table = [
+        [_fmt_cell(r.get(key), kind) for key, _, kind in SUMMARY_COLS]
+        for r in rows
+    ]
+
+    print()
     print(f"  多策略回测汇总  |  标的: {stock}  |  窗口: {start} ~ {end}")
-    print("=" * 100)
-    print(df.to_string(index=False, float_format=lambda x: f"{x:>8.2f}"))
-    print("=" * 100)
+    print(tabulate(table, headers=headers, tablefmt="grid", numalign="right"))
 
     def _pick(key: str, reverse: bool = False):
         valid = [r for r in rows if r.get(key) is not None]
@@ -100,11 +118,12 @@ def print_summary_table(rows: Iterable[dict], stock: str, start: str, end: str) 
             return "N/A"
         return f"{r['label']} ({r[key]:+.2f})"
 
+    print()
     print(f"  最佳总收益:    {_fmt(_pick('total_return', reverse=True), 'total_return')}")
     print(f"  最佳夏普比:    {_fmt(_pick('sharpe_ratio', reverse=True), 'sharpe_ratio')}")
     print(f"  最大回撤最小:  {_fmt(_pick('max_drawdown'), 'max_drawdown')}")
     print(f"  胜率最高:      {_fmt(_pick('win_rate', reverse=True), 'win_rate')}")
-    print("=" * 100 + "\n")
+    print()
 
 
 # 暴露内部辅助函数给 tests / 高级用法

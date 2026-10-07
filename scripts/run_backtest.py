@@ -30,7 +30,12 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from loguru import logger  # noqa: E402
 
-from backtest.engine import calc_metrics, setup_cerebro, wrap_strategy  # noqa: E402
+from backtest.engine import (  # noqa: E402
+    calc_metrics,
+    setup_cerebro,
+    setup_multi_tf_cerebro,
+    wrap_strategy,
+)
 from backtest.reports import plot_backtest, print_strategy_metrics, print_summary_table  # noqa: E402
 from backtest.strategies import load_strategies  # noqa: E402
 from config.settings import (  # noqa: E402
@@ -41,10 +46,33 @@ from config.settings import (  # noqa: E402
 
 
 def _run_one(entry: dict, stock: str, start: str, end: str, plot: bool,
-             storage=None) -> dict:
-    """跑单个策略；返回 ``run_and_report`` 风格的 metrics dict。"""
+             storage=None, **strategy_kwargs) -> dict:
+    """跑单个策略；返回 ``run_and_report`` 风格的 metrics dict。
+
+    根据 ``STRATEGY_META['setup']`` 自动选择 cerebro 配置：
+      - ``"multi_tf"`` → ``setup_multi_tf_cerebro``（周线 + 日线）
+      - 其它 → ``setup_cerebro``（单数据源）
+    """
+    meta = entry["meta"]
+    if meta.get("requires_predictions"):
+        # ML 类策略需外部预训练模型，直接跑会 0 信号
+        raise RuntimeError(
+            f"策略 {meta.get('name')} 需要预训练的 ML 预测字典，"
+            "请改用 scripts/run_turtle_ml.py"
+        )
+
+    setup_kind = meta.get("setup", "default")
     wrapped = wrap_strategy(entry["class"])
-    cerebro, df = setup_cerebro(wrapped, stock, start, end, storage=storage)
+    if setup_kind == "multi_tf":
+        cerebro, df = setup_multi_tf_cerebro(
+            wrapped, stock, start, end,
+            storage=storage, **strategy_kwargs,
+        )
+    else:
+        cerebro, df = setup_cerebro(
+            wrapped, stock, start, end,
+            storage=storage, **strategy_kwargs,
+        )
     results = cerebro.run()
     strat = results[0]
     metrics = calc_metrics(cerebro, strat, df)
@@ -54,16 +82,16 @@ def _run_one(entry: dict, stock: str, start: str, end: str, plot: bool,
         start=df.index[0].strftime("%Y-%m-%d"),
         end=df.index[-1].strftime("%Y-%m-%d"),
         trading_days=len(df),
-        label=entry["meta"]["name"],
+        label=meta["name"],
     )
 
     result = {**metrics, "df": df,
               "trades": strat._trade_log,
               "nav": strat._nav_log,
-              "label": entry["meta"]["name"]}
+              "label": meta["name"]}
 
     if plot:
-        plot_backtest(result, stock_code=stock, title=entry["meta"]["name"])
+        plot_backtest(result, stock_code=stock, title=meta["name"])
     return result
 
 
