@@ -1,0 +1,29 @@
+# 数据采集
+akshare>=1.12.0
+tushare>=1.4.0
+pymysql>=1.1.0
+# xtquant 由 MiniQMT 自带，Windows-only，需在 QMT 环境下独立安装：
+#   pip install xtquant
+# 此处不固定版本，避免在没有 QMT 的开发机上报错
+
+# 数据处理
+pandas>=2.0.0
+pyarrow>=14.0.0
+
+# 配置与工具
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+
+# 回测与分析
+numpy>=1.24.0
+scipy>=1.11.0
+matplotlib>=3.7.0
+
+# 调度
+apscheduler>=3.10.0
+
+# 开发与测试
+pytest>=7.4.0
+pytest-cov>=4.1.0
+ruff>=0.1.0

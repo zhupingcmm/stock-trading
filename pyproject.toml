@@ -1,0 +1,36 @@
+[project]
+name = "stock-trading"
+version = "0.1.0"
+description = "A 股量化投研项目：数据采集、选股、回测"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "stock-trading" }
+]
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+data = ["akshare>=1.12.0", "tushare>=1.4.0"]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["data_collection*", "selection*", "backtest*", "config*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
