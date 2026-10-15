@@ -23,47 +23,61 @@ box "External System" #LightYellow
 end box
 
 == Step 0: Pre-Trade-Capture Valoren Validation (Booking = TAP_ON) ==
-' Trigger: Booking = TAP_ON
+' Trigger: Booking = TAP_ON; new validation rules (Duplicate Check + MTM channel checks)
 upstream -[#388E3C]> tc : booking trade data
-tc -[#388E3C]> mtm : POST /v1/internal/distribution-six\nisDistributionSix?(clientId)
-mtm -[#388E3C]--> tc : true / false (Channel is Six)
+note right #LightGreen : Validation & Eligibility check
 
-alt Channel is Six
-    tc -[#388E3C]> tc : Has Valoren?
+tc -[#388E3C]> tc : Valoren No is provided?
 
-    alt Valoren provided
-        tc -[#388E3C]> tc : checkBookedBefore(strategyCode, valoren, isin)
-        note right #LightGreen : TC internal method, encapsulates PM data query logic
-        pm -[#388E3C]--> tc : booked / not booked
+alt Valoren provided (Y)
+    ' ---- Branch A: duplicate check ----
+    tc -[#388E3C]> tc : Valoren No is duplicated?\n//Duplicate Check against all the trade,\nexcluding deleted trades//
+    note right #LightGreen : TC internal method, encapsulates PM data query logic
+    pm -[#388E3C]--> tc : duplicated / unique
 
-        alt booked before
-            tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
+    alt duplicated (Y)
+        tc -[#388E3C]> tc : Push to GMO Exception Queue
+        note right #LightGreen : Reason: duplicate Valoren\n(stays inside ms-structured-product-trade-capture)
+    else unique (N)
+        ' ---- Branch B: query MTM, channel check ----
+        tc -[#388E3C]> mtm : POST /v1/internal/distribution-six\nisDistributionSix?(clientId)
+        mtm -[#388E3C]--> tc : true (BBG) / false (non BBG)
+        note right #LightGreen : Query MTM Module
+
+        alt MTM channel = BBG (Y)
+            tc -[#388E3C]> tc : (A) Save to ms-structured-product-trade-capture DB
             note right #LightGreen : Continue to Step 1 (ISIN Activation)
-        else not booked before
-            tc -[#388E3C]> tc : Push to Exception Queue
-            note right #LightGreen : Reason: TAP_ON but record never booked\n(stays inside ms-structured-product-trade-capture)
+        else MTM channel != BBG (N)
+            tc -[#388E3C]> tc : (B) Save to ms-structured-product-trade-capture DB
+            note right #LightGreen : Continue to Step 1 (ISIN Activation)
         end
-    else Valoren NOT provided
-        tc -[#388E3C]> tc : Push to Exception Queue
-        note right #LightGreen : Reason: Six-channel client missing Valoren\n(stays inside ms-structured-product-trade-capture)
     end
-else Channel is NOT Six
-    tc -[#388E3C]> tc : Has Valoren?
+else Valoren NOT provided (N)
+    ' ---- Branch C: query MTM for Client + channel check ----
+    tc -[#388E3C]> mtm : POST /v1/internal/distribution-six\nisDistributionSix?(clientId)
+    mtm -[#388E3C]--> tc : Client found (Y) / not found (N)
+    note right #LightGreen : Query MTM Module
 
-    alt Valoren provided
-        tc -[#388E3C]> tc : checkBookedBefore(strategyCode, valoren, isin)
-        note right #LightGreen : TC internal method, encapsulates PM data query logic
-        pm -[#388E3C]--> tc : booked / not booked
+    alt Client found (Y)
+        tc -[#388E3C]> mtm : MTM channel = SIX?
+        mtm -[#388E3C]--> tc : true / false
 
-        alt booked before
-            tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
-            note right #LightGreen : Continue to Step 1 (ISIN Activation)
-        else not booked before
-            tc -[#388E3C]> tc : Push to Exception Queue
-            note right #LightGreen : Reason: TAP_ON but record never booked\n(stays inside ms-structured-product-trade-capture)
+        alt MTM channel = SIX (Y)
+            tc -[#388E3C]> tc : Push to GMO Exception Queue
+            note right #LightGreen : Reason: Six-channel client missing Valoren\n(stays inside ms-structured-product-trade-capture)
+        else MTM channel != SIX (N)
+            tc -[#388E3C]> mtm : MTM channel = BBG?
+            mtm -[#388E3C]--> tc : true / false
+
+            alt MTM channel = BBG (Y)
+                tc -[#388E3C]> tc : (C) Save to ms-structured-product-trade-capture DB
+                note right #LightGreen : Continue to Step 1 (ISIN Activation)
+            else MTM channel != BBG (N)
+                note right #LightGreen : Not required for Connexor interface
+            end
         end
-    else Valoren NOT provided
-        note right #LightGreen : no-op
+    else Client NOT found (N)
+        note right #LightGreen : Not required for Connexor interface
     end
 end
 

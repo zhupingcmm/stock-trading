@@ -40,3 +40,10 @@ Tap_On_workflow  中 checkBookedBefore 和 Final_workflow 中 findByValorenCode 
 
 - Tap_On_workflow  step 1 中 query 关于Booking Record 那条线是不需要
 - booked/Not booked 判断 基于上面的checkBookedBefore的结果
+
+
+上面2张图的内容分别是tap_on step 0 和 finnal step 0 最新的内容， 首先将图片内容转换为文字， 先不改对应的puml
+
+现在我有如下想法
+- 出一张新图 puml 合并 就是将上面tap_on step 0  和 finnal step 0 
+- 将最新的 tap_on step 0  和 finnal step 0  更新对应 的 workflow puml 

@@ -23,45 +23,43 @@ box "External System" #LightYellow
 end box
 
 == Step 0: Pre-Trade-Capture Valoren Validation (Booking = FINAL) ==
+' Trigger: Booking = FINAL; new validation rules (Final-Tap-on Valoren match + MTM channel checks)
 upstream -[#388E3C]> tc : booking trade data
-tc -[#388E3C]> mtm : POST /v1/internal/distribution-six\nisDistributionSix?(clientId)
-mtm -[#388E3C]--> tc : true / false
+note right #LightGreen : Validation & Eligibility check
 
-alt Channel is Six
-    tc -[#388E3C]> tc : Has Valoren?
+tc -[#388E3C]> tc : Valoren No is provided?
 
-    alt Valoren provided
-        tc -[#388E3C]> tc : findByValorenCode(valoren)
-        note right #LightGreen : TC internal method, encapsulates PM data query logic
-        pm -[#388E3C]--> tc : exists / not exists
+alt Valoren provided (Y)
+    ' ---- Branch A: Final trade Valoren == Tap-on Valoren ? ----
+    tc -[#388E3C]> tc : Valoren No of Final trade\nand Tap-on is same?\n//Check Strategy code + ISIN + Valoren No//
+    note right #LightGreen : TC internal method, encapsulates PM data query logic
+    pm -[#388E3C]--> tc : same (Y) / differs (N)
 
-        alt exists (duplicate)
-            tc -[#388E3C]> tc : Push to Exception Queue
-            note right #LightGreen : Reason: duplicate Valoren for Six-channel client\n(stays inside ms-structured-product-trade-capture)
-        else not exists (unique)
-            tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
-        end
-    else Valoren NOT provided
-        tc -[#388E3C]> tc : Push to Exception Queue
-        note right #LightGreen : Reason: Six-channel client missing Valoren\n(stays inside ms-structured-product-trade-capture)
+    alt same (Y)
+        ' Submit Trade continues to Step 1
+        note right #LightGreen : Submit Trade → Continue to Step 1 (ISIN Activation)
+    else differs (N)
+        tc -[#388E3C]> tc : Send to GMO Exception Queue
+        note right #LightGreen : Reason: Final-trade Valoren differs from Tap-on Valoren\n(stays inside ms-structured-product-trade-capture)
     end
-else Channel is NOT Six
-    tc -[#388E3C]> tc : Has Valoren?
+else Valoren NOT provided (N)
+    ' ---- Branch B: query MTM for Client + SIX channel check ----
+    tc -[#388E3C]> mtm : POST /v1/internal/distribution-six\nisDistributionSix?(clientId)
+    mtm -[#388E3C]--> tc : Client found (Y) / not found (N)
+    note right #LightGreen : Query MTM Module
 
-    alt Valoren provided
-        tc -[#388E3C]> tc : findByValorenCode(valoren)
-        note right #LightGreen : TC internal method, encapsulates PM data query logic
-        pm -[#388E3C]--> tc : exists / not exists
+    alt Client found (Y)
+        tc -[#388E3C]> mtm : MTM channel = SIX?
+        mtm -[#388E3C]--> tc : true / false
 
-        alt exists (duplicate)
-            tc -[#388E3C]> tc : Push to Exception Queue
-            note right #LightGreen : Reason: duplicate Valoren\n(stays inside ms-structured-product-trade-capture)
-        else not exists (unique)
-            tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
+        alt MTM channel = SIX (Y)
+            tc -[#388E3C]> tc : Send to GMO Exception Queue
+            note right #LightGreen : Reason: Six-channel client missing Valoren\n(stays inside ms-structured-product-trade-capture)
+        else MTM channel != SIX (N)
+            note right #LightGreen : Not required for Connexor interface
         end
-    else Valoren NOT provided
-        tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
-        note right #LightGreen : Non-Six-channel client without Valoren is acceptable\n(stays inside ms-structured-product-trade-capture)
+    else Client NOT found (N)
+        note right #LightGreen : Not required for Connexor interface
     end
 end
 

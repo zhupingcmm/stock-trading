@@ -1,0 +1,79 @@
+@startuml precheck
+title Step 0 — Pre-Trade-Capture Valoren Validation\n(TAP_ON + FINAL merged, latest — dedup'd)
+
+' GM = General Manager (bank operator). Tap-on and Final flows share the same
+' Trade upload entry point but diverge on validation rules:
+'   - TAP_ON : Duplicate Check against all trades, excl deleted
+'   - FINAL  : Final & Tap-on Valoren No must match
+
+start
+
+:GM: Trade upload;
+
+' =============== Valoren presence is the top decision ===============
+if (Valoren No is provided?) then (Y)
+
+  ' ====== Valoren provided: Booking-specific rules ======
+  if (Booking type?) then (TAP_ON)
+    if (Valoren No is duplicated?\n//Duplicate Check against all the trade,\nexcluding deleted trades//) then (Y)
+      :Send to GMO Exception Queue;
+      stop
+    else (N)
+      :Query MTM Module;
+      if (MTM channel = BBG?) then (Y)
+        :A — pass to Step 1 (Submit Trade);
+      else (N)
+        :B — pass to Step 1 (Submit Trade);
+      endif
+    endif
+  else (FINAL)
+    if (Valoren No of Final trade\nand Tap-on is same?\n//Check Strategy code + ISIN + Valoren No//) then (Y)
+      :Submit Trade (→ pass to Step 1);
+    else (N)
+      :Send to GMO Exception Queue;
+      stop
+    endif
+  endif
+
+else (N)
+
+  ' ====== Valoren NOT provided: COMMON Query MTM / Client / SIX path ======
+  :Query MTM Module;
+  if (Client found?) then (Y)
+    if (MTM channel = SIX?) then (Y)
+      :Send to GMO Exception Queue;
+      stop
+    else (N)
+      ' ---- Booking split ONLY here (TAP_ON has extra BBG check) ----
+      if (Booking type?) then (TAP_ON)
+        if (MTM channel = BBG?) then (Y)
+          :C — pass to Step 1 (Submit Trade);
+        else (N)
+          :Not required for Connexor interface;
+          stop
+        endif
+      else (FINAL)
+        :Not required for Connexor interface;
+        stop
+      endif
+    endif
+  else (N)
+    :Not required for Connexor interface;
+    stop
+  endif
+
+endif
+
+end
+
+legend right
+    |= Shape / Color |= Meaning |
+    | #LightGreen | TAP_ON path |
+    | #LightBlue | FINAL path |
+    | #FFE6CC | Decision |
+    | #FFF2CC | Action / API call |
+    | #F8CECC | Exception sink (GMO Exception Queue) |
+    | #DAE8FC | Branch connector (A / B / C) |
+endlegend
+
+@enduml
