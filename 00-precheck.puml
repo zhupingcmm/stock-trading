@@ -19,12 +19,7 @@ if (Valoren No is provided?) then (Y)
       :Send to GMO Exception Queue;
       stop
     else (N)
-      :Query MTM Module;
-      if (MTM channel = BBG?) then (Y)
-        :A — pass to Step 1 (Submit Trade);
-      else (N)
-        :B — pass to Step 1 (Submit Trade);
-      endif
+      :Submit Trade;
     endif
   else (FINAL)
     if (Valoren No of Final trade\nand Tap-on is same?\n//Check Strategy code + ISIN + Valoren No//) then (Y)
@@ -73,7 +68,7 @@ legend right
     | #FFE6CC | Decision |
     | #FFF2CC | Action / API call |
     | #F8CECC | Exception sink (GMO Exception Queue) |
-    | #DAE8FC | Branch connector (A / B / C) |
+    | #DAE8FC | Branch connector (C) |
 endlegend
 
 @enduml
