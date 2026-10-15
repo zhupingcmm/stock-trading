@@ -1,0 +1,108 @@
+@startuml
+title TAP_ON Booking: Full Workflow (Step 0 + Step 1 + Step 2)
+
+' User Submitted Data (User/Operator) & ms-gm-mtm-publication (Existing service, new request implementation)
+actor User as upstream #LightGreen
+participant "ms-gm-mtm-publication" as mtm #LightBlue
+
+' ms-structured-product-trade-capture & Kafka
+participant "ms-structured-product-trade-capture" as tc #LightBlue
+participant Kafka as kafka #LightBlue
+
+' ms-structured-product-management (merged: IsinConsumerService + IsinReservationService + ConnectorService + ConnectorConsumerService)
+participant "ms-structured-product-management" as pm #LightGray
+
+' Adapters
+participant "ms-clearstream-adapter" as cs_adapter #LightBlue
+participant "ms-connexor-adapter" as adapter #LightGreen
+
+' External systems
+box "External System" #LightYellow
+    participant "Clearstream Service" as cs
+    participant "Connexor Numbering Service" as connexor
+end box
+
+== Step 0: Pre-Trade-Capture Valoren Validation (Booking = TAP_ON) ==
+' Trigger: Booking = TAP_ON
+upstream -[#388E3C]> tc : booking trade data
+tc -[#388E3C]> mtm : POST /v1/internal/distribution-six\nisDistributionSix?(clientId)
+mtm -[#388E3C]--> tc : true / false (Channel is Six)
+
+alt Channel is Six
+    tc -[#388E3C]> tc : Has Valoren?
+
+    alt Valoren provided
+        tc -[#388E3C]> tc : checkBookedBefore(strategyCode, valoren, isin)
+        note right #LightGreen : TC internal method, encapsulates PM data query logic
+        pm -[#388E3C]--> tc : booked / not booked
+
+        alt booked before
+            tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
+            note right #LightGreen : Continue to Step 1 (ISIN Activation)
+        else not booked before
+            tc -[#388E3C]> tc : Push to Exception Queue
+            note right #LightGreen : Reason: TAP_ON but record never booked\n(stays inside ms-structured-product-trade-capture)
+        end
+    else Valoren NOT provided
+        tc -[#388E3C]> tc : Push to Exception Queue
+        note right #LightGreen : Reason: Six-channel client missing Valoren\n(stays inside ms-structured-product-trade-capture)
+    end
+else Channel is NOT Six
+    tc -[#388E3C]> tc : Has Valoren?
+
+    alt Valoren provided
+        tc -[#388E3C]> tc : checkBookedBefore(strategyCode, valoren, isin)
+        note right #LightGreen : TC internal method, encapsulates PM data query logic
+        pm -[#388E3C]--> tc : booked / not booked
+
+        alt booked before
+            tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
+            note right #LightGreen : Continue to Step 1 (ISIN Activation)
+        else not booked before
+            tc -[#388E3C]> tc : Push to Exception Queue
+            note right #LightGreen : Reason: TAP_ON but record never booked\n(stays inside ms-structured-product-trade-capture)
+        end
+    else Valoren NOT provided
+        note right #LightGreen : no-op
+    end
+end
+
+== Step 1: ISIN Activation (Existing) ==
+tc -[#1976D2]> tc : sendIsinActivationEvent(tradeHeaderDO)
+tc -[#1976D2]> kafka : Publish IsinActivationReq
+kafka -[#1976D2]>> pm : Consume ISIN_ACTIVATION event
+note left #LightBlue : IsinConsumerService (internal)
+pm -[#1976D2]> pm : activateIsin(isinActivationReq)
+note left #LightBlue : IsinReservationService (internal)
+pm -[#1976D2]> cs_adapter : POST /v1/internal/clearstream/activation
+cs_adapter -[#1976D2]> cs : call ClearStream activation API
+cs -[#1976D2]--> cs_adapter : return isin status
+cs_adapter -[#1976D2]--> pm : return isin status
+pm -[#1976D2]>> kafka : Publish ISIN_ACTIVE
+note left #LightBlue : IsinReservationService (internal)
+kafka -[#1976D2]>> tc : Consume ISIN_ACTIVE event
+note right #LightBlue : Existing ISIN activation completes
+
+== Step 2: Valoren Activation & BBG Setup (Booking = TAP_ON) ==
+tc -[#388E3C]> kafka : Push CONNEXOR_TAP_ON event
+kafka -[#388E3C]>> pm : Consume CONNEXOR_TAP_ON event
+note left #LightGreen : ConnectorConsumerService (internal)
+
+pm -[#388E3C]> adapter : POST /v1/internal/connexor/tap-on
+adapter -[#388E3C]> adapter : constructIBTXml\n(notional amount change)
+adapter -[#388E3C]> connexor : EUFS API: upload IBE xml
+note right #LightGreen : Scenario: TAP_ON Notional Amount Update\n(IBE XML, e.g. Increase/Decrease event)
+connexor -[#388E3C]--> adapter : EUFS response (status)
+adapter -[#388E3C]--> pm : return BUSINESS_STATUS
+pm -[#388E3C]>> kafka : Publish BUSINESS_STATUS status event
+kafka -[#388E3C]>> tc : Consume BUSINESS_STATUS status event
+
+legend right
+    |= Color |= Meaning |
+    |<#LightBlue> Existing code (Step 1 + existing participants) |
+    |<#LightGreen> New code (Step 0 + Step 2 TAP_ON) |
+    |<#LightGray> Internal service (ms-structured-product-management) |
+    |<#LightYellow> External system |
+endlegend
+
+@enduml

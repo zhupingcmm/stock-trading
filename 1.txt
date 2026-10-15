@@ -1,0 +1,42 @@
+1. 这个 PPT主题是技术分享
+2. 大概 需要6-7页左右
+3. 有一页上项目 背景 和解决的问题
+4. agent 怎么和现有系统的集成的设计图
+5. agent 内部详细的设计图
+
+agent 与现有系统的集成 是否优化
+
+
+现在这张图的有如下问题
+- 包含的内容有点多 和复杂， 不是很容易 区分， 是否可以 做一些拆分， 差分成多张图
+
+- product Mgmt 使用灰色罩住，不是很友好
+
+
+- 我觉得现在的拆分还是不对， 应该如下
+- status query 拆分出来这个是对的
+- FINAL 整个 workflow 作为一张图
+- TAP_ ON 整个 workflow 作为一张图 
+
+如下 Service 都属于 Product-Management 这个服务， 如果将如下service 合并在一起， Tap_On 和 Final 的图是否会更简单点
+IsinConsumerService 
+IsinConsumerService
+ConnectorService
+ConnectorConsumerService
+
+
+Final_workflow 中 在 step2 中 关于BookingType的判断可以去掉了
+所有的 POST /v1/internal/connector/submit 改成 POST /v1/internal/connector/voloren
+
+status 这张图可以需要重构
+- 在 product Management 上有一个 定时器 每5s中 扫描一次， 如果是 status 是 Accepted, IN_PROGRESS
+
+- 所有的 Upstream / Data Source 都改成人提交数据
+- MTM Service 是老服务， 但是这次给 MTM Service 发送的请求需要新的实现
+- 
+
+Final_workflow 中
+Tap_On_workflow  中 checkBookedBefore 和 Final_workflow 中 findByValorenCode 是 指向都是 Trade Capture
+
+- Tap_On_workflow  step 1 中 query 关于Booking Record 那条线是不需要
+- booked/Not booked 判断 基于上面的checkBookedBefore的结果

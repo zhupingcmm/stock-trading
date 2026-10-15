@@ -1,0 +1,47 @@
+@startuml
+title Step 3: Scheduled Status Query (NEW) - Common for all booking types
+
+' Product Management (merged: ConnectorService + ConnectorConsumerService)
+participant "Product Management" as pm #LightGray
+participant "ms-connexor-adapter" as adapter #LightGreen
+
+box "External System" #LightYellow
+    participant "Connexor Numbering Service" as connexor
+end box
+
+actor User as user
+
+participant Kafka as kafka #LightBlue
+participant "Trade Capture" as tc #LightBlue
+
+' Scheduled trigger: 18:00 daily
+note over pm #LightGreen : Trigger: cron @ 18:00 daily\nQuery Valoren submitted before today's 18:00\nConnectorConsumerService (internal)
+pm -[#388E3C]> pm : queryTrades(submitTime < today 18:00)
+note left #LightGreen : ConnectorService (internal)
+
+loop for each (isin, valoren)
+    pm -[#388E3C]> adapter : GET /v1/internal/connexor/status\n(isin, valoren)
+    adapter -[#388E3C]> connexor : GET status(isin, valoren)
+    connexor -[#388E3C]--> adapter : status response
+    adapter -[#388E3C]--> pm : status response
+end
+
+' Aggregate failed records and email USER
+pm -[#388E3C]> pm : aggregateFailedRecords(statusList)
+note left #LightGreen : ConnectorService (internal)
+note right #LightGreen : filter status != SUCCESS
+pm -[#388E3C]> user : Email failed records\n(to USER)
+
+' Synchronously publish kafka to Trade Capture
+pm -[#388E3C]>> kafka : Publish ValorenStatusUpdate
+kafka -[#388E3C]>> tc : Consume ValorenStatusUpdate event
+
+legend right
+    |= Color |= Meaning |
+    |<#LightBlue> Existing code (Trade Capture, Kafka) |
+    |<#LightGreen> New code (Step 3 cron trigger, Adapter) |
+    |<#LightGray> Internal service (Product Management) |
+    |<#LightYellow> External system (Connexor Numbering Service) |
+endlegend
+
+@enduml

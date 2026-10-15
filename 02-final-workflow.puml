@@ -1,0 +1,178 @@
+@startuml
+title FINAL Booking: Full Workflow (Step 0 + Step 1 + Step 2)
+
+' User Submitted Data (User/Operator) & ms-gm-mtm-publication (Existing service, new request implementation)
+actor User as upstream #LightGreen
+participant "ms-gm-mtm-publication" as mtm #LightBlue
+
+' ms-structured-product-trade-capture & Kafka
+participant "ms-structured-product-trade-capture" as tc #LightBlue
+participant Kafka as kafka #LightBlue
+
+' ms-structured-product-management (merged: IsinConsumerService + IsinReservationService + ConnectorService + ConnectorConsumerService)
+participant "ms-structured-product-management" as pm #LightGray
+
+' Adapters
+participant "ms-clearstream-adapter" as cs_adapter #LightBlue
+participant "ms-connexor-adapter" as adapter #LightGreen
+
+' External systems
+box "External System" #LightYellow
+    participant "Clearstream Service" as cs
+    participant "Connexor Numbering Service" as connexor
+end box
+
+== Step 0: Pre-Trade-Capture Valoren Validation (Booking = FINAL) ==
+upstream -[#388E3C]> tc : booking trade data
+tc -[#388E3C]> mtm : POST /v1/internal/distribution-six\nisDistributionSix?(clientId)
+mtm -[#388E3C]--> tc : true / false
+
+alt Channel is Six
+    tc -[#388E3C]> tc : Has Valoren?
+
+    alt Valoren provided
+        tc -[#388E3C]> tc : findByValorenCode(valoren)
+        note right #LightGreen : TC internal method, encapsulates PM data query logic
+        pm -[#388E3C]--> tc : exists / not exists
+
+        alt exists (duplicate)
+            tc -[#388E3C]> tc : Push to Exception Queue
+            note right #LightGreen : Reason: duplicate Valoren for Six-channel client\n(stays inside ms-structured-product-trade-capture)
+        else not exists (unique)
+            tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
+        end
+    else Valoren NOT provided
+        tc -[#388E3C]> tc : Push to Exception Queue
+        note right #LightGreen : Reason: Six-channel client missing Valoren\n(stays inside ms-structured-product-trade-capture)
+    end
+else Channel is NOT Six
+    tc -[#388E3C]> tc : Has Valoren?
+
+    alt Valoren provided
+        tc -[#388E3C]> tc : findByValorenCode(valoren)
+        note right #LightGreen : TC internal method, encapsulates PM data query logic
+        pm -[#388E3C]--> tc : exists / not exists
+
+        alt exists (duplicate)
+            tc -[#388E3C]> tc : Push to Exception Queue
+            note right #LightGreen : Reason: duplicate Valoren\n(stays inside ms-structured-product-trade-capture)
+        else not exists (unique)
+            tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
+        end
+    else Valoren NOT provided
+        tc -[#388E3C]> tc : Save to ms-structured-product-trade-capture DB
+        note right #LightGreen : Non-Six-channel client without Valoren is acceptable\n(stays inside ms-structured-product-trade-capture)
+    end
+end
+
+== Step 1: ISIN Activation (Existing) ==
+tc -[#1976D2]> tc : sendIsinActivationEvent(tradeHeaderDO)
+tc -[#1976D2]> kafka : Publish IsinActivationReq
+kafka -[#1976D2]>> pm : Consume ISIN_ACTIVATION event
+note left #LightBlue : IsinConsumerService (internal)
+pm -[#1976D2]> pm : activateIsin(isinActivationReq)
+note left #LightBlue : IsinReservationService (internal)
+pm -[#1976D2]> cs_adapter : POST /v1/internal/clearstream/activation
+cs_adapter -[#1976D2]> cs : call ClearStream activation API
+cs -[#1976D2]--> cs_adapter : return isin status
+cs_adapter -[#1976D2]--> pm : return isin status
+pm -[#1976D2]>> kafka : Publish ISIN_ACTIVE
+kafka -[#1976D2]>> tc : Consume ISIN_ACTIVE event
+note right #LightBlue : Existing ISIN activation completes
+
+== Step 2: Valoren Activation & BBG Setup (FINAL) ==
+tc -[#388E3C]> kafka : Publish CONNEXOR Event
+kafka -[#388E3C]>> pm : Consume CONNEXOR Event
+note left #LightGreen : ConnectorConsumerService (internal)
+
+' === Path 1: Default flow (Valoren present or first-time activation) ===
+group "Path 1: Default flow (Valoren present)" #LightGreen
+    pm -[#388E3C]> pm : checkConnexorSentBefore(isin, valoren)
+    note left #LightGreen : ConnectorConsumerService (internal)
+
+    alt Already sent (branch 1.1)
+        pm -[#388E3C]> pm : checkPreviousXmlSendInvalid(isin)
+        note left #LightGreen : ConnectorConsumerService (internal)\nchecks whether the previous CONNEXOR xml send was_Invalid
+
+        alt Previous send = Invalid
+            pm -[#388E3C]> adapter : POST /v1/internal/connexor/voloren\n(eventType = 2)
+            adapter -[#388E3C]> adapter : constructIBTXml(eventType=2)
+            adapter -[#388E3C]> connexor : TUS API: upload IBT xml
+            note right #LightGreen : Scenario 3 - Valoren Activation with amendment\n(previous send Invalid, eventType = 2)
+            connexor -[#388E3C]--> adapter : return response
+            adapter -[#388E3C]--> pm : return BUSINESS_STATUS
+            pm -[#388E3C]>> kafka : Publish BUSINESS_STATUS status Event
+            kafka -[#388E3C]>> tc : Consume BUSINESS_STATUS status Event
+        else Previous send = not Invalid
+            pm -[#388E3C]> adapter : POST /v1/internal/connexor/voloren\n(eventType = 1)
+            adapter -[#388E3C]> adapter : constructIBTXml(eventType=1)
+            adapter -[#388E3C]> connexor : TUS API: upload IBT xml
+            note right #LightGreen : Scenario 3 - Valoren Activation with amendment\n(previous send not Invalid, eventType = 1)
+            connexor -[#388E3C]--> adapter : return response
+            adapter -[#388E3C]--> pm : return BUSINESS_STATUS
+            pm -[#388E3C]>> kafka : Publish BUSINESS_STATUS status Event
+            kafka -[#388E3C]>> tc : Consume BUSINESS_STATUS status Event
+        end
+    else Not sent (branch 1.2)
+        pm -[#388E3C]> mtm : POST /v1/internal/bbg\nisBBG?(clientId)
+
+        alt BBG = YES (branch 1.2.1)
+            pm -[#388E3C]> adapter : POST /v1/internal/connexor/voloren\n(eventType = 1)
+            adapter -[#388E3C]> adapter : constructIBTXml(eventType=1)
+            adapter -[#388E3C]> connexor : TUS API: upload IBT xml
+            note right #LightGreen : Scenario 1: Valoren Activation\n(Trade submission)
+            connexor -[#388E3C]--> adapter : return response
+            adapter -[#388E3C]--> pm : return BUSINESS_STATUS
+            pm -[#388E3C]>> kafka : Publish BUSINESS_STATUS status Event
+            kafka -[#388E3C]>> tc : Consume BUSINESS_STATUS status Event
+        else BBG = NO (branch 1.2.2)
+            pm -[#388E3C]> adapter : POST /v1/internal/connexor/bbg-ticker\n(eventType = 1, serviceData = 4)
+            adapter -[#388E3C]> adapter : constructIBTXml(eventType=1, serviceData=4)
+            adapter -[#388E3C]> connexor : TUFS API: upload IBT xml
+            adapter -[#388E3C]> connexor : DUFS API: upload termsheet zip\n(zip: metadata.xml + termsheet.pdf)
+            note right #LightGreen : Scenario 2: Valoren Activation, Trade submission\nBBG Ticker Creation
+            connexor -[#388E3C]--> adapter : return TUFS & DUFS responses
+            adapter -[#388E3C]--> pm : return BUSINESS_STATUS
+            pm -[#388E3C]>> kafka : Publish BUSINESS_STATUS status Event
+            kafka -[#388E3C]>> tc : Consume BUSINESS_STATUS status Event
+        end
+    end
+end
+
+' === Path 2: Special scenario (channel != Six AND no Valoren) ===
+group "Path 2: Special case (only when channel != Six AND no Valoren)" #LightCoral
+    alt Channel is NOT Six AND no Valoren
+        pm -[#388E3C]> mtm : POST /v1/internal/bbg\nisBBG?(clientId)
+
+        alt BBG = YES
+            pm -[#388E3C]> pm : checkConnexorSentBefore(isin)
+
+            alt Already sent
+                note right #LightGray : no-op
+            else Not sent
+                pm -[#388E3C]> adapter : POST /v1/internal/connexor/bbg-ticker\n(eventType = 1, serviceData = 4)
+                adapter -[#388E3C]> adapter : constructIBTXml(eventType=1, serviceData=4)
+                adapter -[#388E3C]> connexor : TUFS API: upload IBT xml
+                adapter -[#388E3C]> connexor : DUFS API: upload termsheet zip\n(zip: metadata.xml + termsheet.pdf)
+                note right #LightGreen : Scenario 4 - BBG Ticker Creation
+                connexor -[#388E3C]--> adapter : return TUFS & DUFS responses
+                adapter -[#388E3C]--> pm : return BUSINESS_STATUS
+                pm -[#388E3C]>> kafka : Publish BUSINESS_STATUS status Event
+                kafka -[#388E3C]>> tc : Consume BUSINESS_STATUS status Event
+            end
+        else BBG = NO
+            note right #LightGray : no-op
+        end
+    end
+end
+
+legend right
+    |= Color |= Meaning |
+    |<#LightBlue> Existing code (Step 1 + existing participants) |
+    |<#LightGreen> New code (Step 0 + Step 2 FINAL paths) |
+    |<#LightGray> Internal service (ms-structured-product-management) |
+    |<#LightYellow> External system |
+    |<#LightCoral> Special-case branch (Path 2) |
+endlegend
+
+@enduml
